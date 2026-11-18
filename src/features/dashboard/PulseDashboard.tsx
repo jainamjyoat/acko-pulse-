@@ -5,6 +5,7 @@ import { supabaseBrowser } from "../shared/supabase-browser";
 import type { ServiceState, StatusPayload } from "../shared/types";
 import PublicStatus from "../status/PublicStatus";
 import SreConsole from "../sre/SreConsole";
+import TestLab from "../testing/TestLab";
 import { stateDot, stateStyles } from "../shared/ui";
 
 const EMPTY: StatusPayload = {
@@ -69,7 +70,7 @@ function Brand() {
 
 export default function PulseDashboard() {
   const [status, setStatus] = useState<StatusPayload>(EMPTY);
-  const [tab, setTab] = useState<"public" | "sre">("public");
+  const [tab, setTab] = useState<"public" | "sre" | "test">("public");
   const [adminKey, setAdminKey] = useState("");
   const [busyId, setBusyId] = useState<string | null>(null);
   const [resolveError, setResolveError] = useState<string | null>(null);
@@ -286,6 +287,7 @@ export default function PulseDashboard() {
             [
               ["public", "Public status"],
               ["sre", "SRE console"],
+              ["test", "Test lab"],
             ] as const
           ).map(([value, label]) => (
             <button
@@ -321,7 +323,7 @@ export default function PulseDashboard() {
             </div>
           ) : tab === "public" ? (
             <PublicStatus status={status} />
-          ) : (
+          ) : tab === "sre" ? (
             <SreConsole
               status={status}
               adminKey={adminKey}
@@ -331,6 +333,8 @@ export default function PulseDashboard() {
               busyId={busyId}
               error={resolveError}
             />
+          ) : (
+            <TestLab status={status} adminKey={adminKey} onRefresh={refresh} />
           )}
         </div>
       </main>

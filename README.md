@@ -17,7 +17,7 @@ To test a failure, for example: `curl -X POST http://localhost:4102/control/fail
 
 Apply `src/features/poller/schema.sql` in the Supabase SQL editor to enable persistence and realtime websockets.
 
-The feature is grouped under `src/features/`; see `src/features/README.md` for the full file map.
+The feature is grouped under `src/features/`; see `src/features/README.md` for the full file map. The dashboard's SRE Console includes a Test Lab for safe local failure, latency, security-header, rollback, and restore scenarios. Configure `ADMIN_KEY` to enable test controls.
 
 ## Behavior
 
@@ -29,6 +29,7 @@ The feature is grouped under `src/features/`; see `src/features/README.md` for t
 - `WEBHOOK_URL` receives state changes only, signed with `X-Pulse-Signature: sha256=<hmac>` over the raw JSON body using `WEBHOOK_SECRET`.
 - `POST /api/incidents/resolve` requires `x-admin-key: $ADMIN_KEY`, resolves the incident, and resets the service window to operational.
 - Public tab shows a calm banner, 20-block history, and public incidents only. SRE tab shows full telemetry and amber P95 > 1000ms.
+- Test Lab controls only the four local Docker mock services; it does not send attack traffic to external targets.
 
 ## Notes
 

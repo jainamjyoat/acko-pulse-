@@ -4,14 +4,19 @@ const port = Number(process.env.PORT ?? 8080);
 const name = process.env.SERVICE_NAME ?? "Pulse service";
 const latency = Math.max(0, Number(process.env.LATENCY_MS ?? 35));
 let failing = process.env.START_FAILING === "true";
+let responseLatency = latency;
+let insecureHeaders = false;
 
 function send(response, status, payload) {
-  response.writeHead(status, {
+  const headers = {
     "content-type": "application/json; charset=utf-8",
-    "x-content-type-options": "nosniff",
-    "x-frame-options": "DENY",
     "cache-control": "no-store",
-  });
+  };
+  if (!insecureHeaders) {
+    headers["x-content-type-options"] = "nosniff";
+    headers["x-frame-options"] = "DENY";
+  }
+  response.writeHead(status, headers);
   response.end(JSON.stringify(payload));
 }
 
@@ -22,7 +27,7 @@ const server = createServer((request, response) => {
     setTimeout(() => {
       if (failing) return send(response, 503, { service: name, status: "failing" });
       return send(response, 200, { service: name, status: "ok", latencyMs: latency });
-    }, latency);
+    }, responseLatency);
     return;
   }
 
@@ -36,10 +41,43 @@ const server = createServer((request, response) => {
     return send(response, 200, { service: name, status: "failing" });
   }
 
+  if (request.method === "POST" && url.pathname === "/control/latency") {
+    let raw = "";
+    request.on("data", (chunk) => (raw += chunk));
+    request.on("end", () => {
+      let requested;
+      try {
+        requested = Number(JSON.parse(raw).latencyMs);
+      } catch {
+        return send(response, 400, { error: "Expected JSON { latencyMs }" });
+      }
+      if (!Number.isInteger(requested) || requested < 0 || requested > 4500) {
+        return send(response, 400, { error: "latencyMs must be 0..4500" });
+      }
+      responseLatency = requested;
+      send(response, 200, { service: name, latencyMs: responseLatency });
+    });
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/control/security-headers") {
+    insecureHeaders = url.searchParams.get("mode") === "missing";
+    return send(response, 200, {
+      service: name,
+      securityHeaders: insecureHeaders ? "missing" : "present",
+    });
+  }
+
   if (request.method === "GET" && url.pathname === "/") {
     return send(response, 200, {
       service: name,
-      endpoints: ["GET /health", "POST /control/fail", "POST /control/reset"],
+      endpoints: [
+        "GET /health",
+        "POST /control/fail",
+        "POST /control/reset",
+        "POST /control/latency { latencyMs: 0..4500 }",
+        "POST /control/security-headers?mode=missing|normal",
+      ],
     });
   }
 
