@@ -3,7 +3,7 @@ import { SERVICES } from "../poller/services";
 import { supabaseAdmin } from "../shared/supabase-server";
 
 const HOUR_MS = 60 * 60 * 1000;
-const CACHE_MS = 30_000;
+const CACHE_MS = 5_000;
 const SLO_TARGET = 99.9;
 
 export type MetricPoint = {

@@ -11,6 +11,10 @@ const EMPTY: StatusPayload = {
   services: [],
   incidents: [],
   sla: [],
+  webhooks: [],
+  audit: [],
+  auditValid: true,
+  slaMet: true,
   updatedAt: "",
   source: "memory",
 };
@@ -118,6 +122,26 @@ export default function PulseDashboard() {
       )
       .on(
         "postgres_changes",
+        { event: "*", schema: "public", table: "state_events" },
+        () => void refresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "audit_logs" },
+        () => void refresh(),
+      )
+      .on(
+        "postgres_changes",
+        { event: "*", schema: "public", table: "webhook_events" },
+        () => void refresh(),
+      )
+      .on(
+        "broadcast",
+        { event: "state_transition" },
+        () => void refresh(),
+      )
+      .on(
+        "postgres_changes",
         { event: "*", schema: "public", table: "incidents" },
         () => void refresh(),
       )
@@ -134,7 +158,7 @@ export default function PulseDashboard() {
     setResolveError(null);
 
     try {
-      const response = await fetch("/api/incidents/resolve", {
+      const response = await fetch("/api/incidents/manual-resolve", {
         method: "POST",
         headers: {
           "content-type": "application/json",
@@ -150,9 +174,42 @@ export default function PulseDashboard() {
         setResolveError(data.error ?? "Unable to resolve incident");
         return;
       }
-      setStatus(data);
+      await refresh();
     } catch {
       setResolveError("Resolve request failed");
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const rollback = async (id: string) => {
+    if (!adminKey) return;
+    setBusyId(id);
+    setResolveError(null);
+    try {
+      const response = await fetch("/api/incidents/resolve", {
+        method: "POST",
+        headers: { "content-type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify({ id }),
+      });
+      const result = (await response.json()) as { error?: string };
+      if (!response.ok) {
+        setResolveError(result.error ?? "Rollback failed");
+        return;
+      }
+      const expires = Date.now() + 180_000;
+      while (Date.now() < expires) {
+        await new Promise((resolve) => setTimeout(resolve, 5000));
+        const snapshot = await fetch("/api/poll", { cache: "no-store" });
+        if (!snapshot.ok) continue;
+        const next = (await snapshot.json()) as StatusPayload;
+        setStatus(next);
+        const incident = next.incidents.find((row) => row.id === id);
+        if (incident?.status === "resolved") return;
+      }
+      setResolveError("Recovery not confirmed after 3 minutes; incident remains open");
+    } catch {
+      setResolveError("Rollback request failed");
     } finally {
       setBusyId(null);
     }
@@ -270,6 +327,7 @@ export default function PulseDashboard() {
               adminKey={adminKey}
               setAdminKey={setAdminKey}
               onResolve={resolve}
+              onRollback={rollback}
               busyId={busyId}
               error={resolveError}
             />

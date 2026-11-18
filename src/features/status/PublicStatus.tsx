@@ -7,9 +7,11 @@ function customerState(state: ServiceState): ServiceState {
   return state === "OUTAGE" ? "OUTAGE" : "OPERATIONAL";
 }
 
-function UptimeBar({ history }: { history: { ok: boolean }[] }) {
-  const bars: { ok: boolean; faded?: boolean }[] = history.slice(-HISTORY_BLOCKS);
-  while (bars.length < HISTORY_BLOCKS) bars.unshift({ ok: true, faded: true });
+function UptimeBar({ history }: { history: boolean[] }) {
+  const bars: { outage: boolean; faded?: boolean }[] = history
+    .slice(-HISTORY_BLOCKS)
+    .map((outage) => ({ outage }));
+  while (bars.length < HISTORY_BLOCKS) bars.unshift({ outage: false, faded: true });
 
   return (
     <div className="flex h-7 items-end gap-[3px]" aria-label="Last 20 checks">
@@ -19,9 +21,9 @@ function UptimeBar({ history }: { history: { ok: boolean }[] }) {
           className={`min-w-0 flex-1 rounded-sm ${
             bar.faded
               ? "h-2 bg-white/[0.06]"
-              : bar.ok
-                ? "h-full bg-emerald-400/70"
-                : "h-full bg-red-400/80"
+              : bar.outage
+                ? "h-full bg-red-400/80"
+                : "h-full bg-emerald-400/70"
           }`}
         />
       ))}
@@ -111,7 +113,7 @@ function ServiceCard({
       </div>
 
       <div className="mt-5">
-        <UptimeBar history={service.history} />
+        <UptimeBar history={service.outageHistory} />
         <div className="mt-2 flex items-center justify-between text-[11px]">
           <span className="text-slate-500">
             Last {HISTORY_BLOCKS} checks
@@ -125,7 +127,11 @@ function ServiceCard({
   );
 }
 
-function IncidentFeed({ incidents }: { incidents: StatusPayload["incidents"] }) {
+function IncidentFeed({
+  incidents,
+}: {
+  incidents: StatusPayload["incidents"];
+}) {
   const publicIncidents = incidents.filter(
     (incident) => incident.scope === "PUBLIC",
   );
@@ -173,6 +179,11 @@ function IncidentFeed({ incidents }: { incidents: StatusPayload["incidents"] }) 
                 >
                   {incident.status}
                 </span>
+                {incident.status === "resolved" && incident.resolutionMethod === "rollback" && (
+                  <p className="mt-2 text-[10px] font-medium text-emerald-300">
+                    Resolved via One-Click Rollback
+                  </p>
+                )}
               </div>
             </div>
           ))

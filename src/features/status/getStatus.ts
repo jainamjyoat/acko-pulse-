@@ -1,7 +1,9 @@
 import { getRollingMetrics, type RollingMetrics } from "../metrics/p95";
+import { getAuditTrail, verifyAuditTrail } from "../audit/hashChain";
 import { getStore } from "../poller/store";
 import { supabaseAdmin } from "../shared/supabase-server";
 import type {
+  AuditEntry,
   Incident,
   IncidentScope,
   SlaRow,
@@ -19,10 +21,12 @@ type IncidentRow = {
   title: string;
   started_at: string;
   resolved_at: string | null;
+  resolution_method: "rollback" | "auto-heal" | "manual" | "auto" | null;
 };
 
 export function buildStatus(rolling: RollingMetrics): StatusPayload {
   const store = getStore();
+  const audit: AuditEntry[] = [];
 
   const services = [...store.runtimes.values()].map((runtime) => {
     const metric = rolling.metrics.get(runtime.config.id);
@@ -36,6 +40,7 @@ export function buildStatus(rolling: RollingMetrics): StatusPayload {
       description: runtime.config.description,
       url: runtime.config.url,
       state: runtime.state,
+      outageCycles: runtime.outageCycles,
       latency: runtime.latency,
       p95: metric?.p95 ?? 0,
       grade: runtime.grade,
@@ -44,6 +49,7 @@ export function buildStatus(rolling: RollingMetrics): StatusPayload {
         ok: check.ok,
         latency: check.latency,
       })),
+      outageHistory: runtime.outageHistory,
       uptime: metric?.uptime ?? (checks ? ((checks - failures) / checks) * 100 : 100),
       checks,
       failures,
@@ -79,6 +85,10 @@ export function buildStatus(rolling: RollingMetrics): StatusPayload {
           Number(b.status === "open") - Number(a.status === "open") ||
           b.startedAt.localeCompare(a.startedAt),
       ),
+    audit,
+    auditValid: verifyAuditTrail(audit),
+    slaMet: sla.every((row) => row.uptime >= 99.9),
+    webhooks: store.receivedWebhooks,
     sla,
     updatedAt: new Date(store.lastPoll || Date.now()).toISOString(),
     source: rolling.source,
@@ -88,13 +98,17 @@ export function buildStatus(rolling: RollingMetrics): StatusPayload {
 export async function getStatus(): Promise<StatusPayload> {
   const rolling = await getRollingMetrics();
   const payload = buildStatus(rolling);
+  payload.audit = await getAuditTrail();
+  payload.auditValid = verifyAuditTrail(payload.audit);
+  const webhookModule = await import("../webhooks/verify");
+  payload.webhooks = await webhookModule.getWebhookEvents();
   const supabase = supabaseAdmin();
   if (!supabase) return payload;
 
   const { data, error } = await supabase
     .from("incidents")
     .select(
-      "id, service_id, severity, scope, status, title, started_at, resolved_at",
+      "id, service_id, severity, scope, status, title, started_at, resolved_at, resolution_method",
     )
     .order("started_at", { ascending: false })
     .limit(30);
@@ -117,10 +131,13 @@ export async function getStatus(): Promise<StatusPayload> {
       scope: row.scope ?? (row.severity === "warning" ? "INTERNAL" : "PUBLIC"),
       status: row.status,
       title: row.title,
+      resolutionMethod: row.resolution_method ?? undefined,
       startedAt: row.started_at,
       resolvedAt: row.resolved_at,
     }),
   );
+  payload.audit = await getAuditTrail();
+  payload.auditValid = verifyAuditTrail(payload.audit);
   payload.source = "supabase";
   return payload;
 }

@@ -1,8 +1,4 @@
-import type {
-  IncidentScope,
-  SecurityGrade,
-  ServiceState,
-} from "./types";
+import type { IncidentScope, SecurityGrade, ServiceState } from "./types";
 
 export const stateStyles: Record<ServiceState, string> = {
   OPERATIONAL:
@@ -47,18 +43,15 @@ export function ScopeBadge({ scope }: { scope: IncidentScope }) {
 }
 
 export function GradeBadge({ grade }: { grade: SecurityGrade }) {
-  const tone =
-    grade === "A" || grade === "B"
-      ? "text-emerald-300 border-emerald-400/20 bg-emerald-400/5"
-      : grade === "C"
-        ? "text-amber-300 border-amber-400/20 bg-amber-400/5"
-        : "text-red-300 border-red-400/20 bg-red-400/5";
+  const tone = grade === "A"
+    ? "text-emerald-300 border-emerald-400/20 bg-emerald-400/5"
+    : "text-amber-300 border-amber-400/20 bg-amber-400/5";
 
   return (
     <span
       className={`inline-flex items-center rounded-md border px-2 py-0.5 font-mono text-[11px] font-semibold ${tone}`}
     >
-      {grade}
+      <span aria-hidden="true">⛨</span>&nbsp;SEC {grade}
     </span>
   );
 }

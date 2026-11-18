@@ -37,6 +37,20 @@ create table if not exists public.incidents (
   resolved_at timestamptz
 );
 
+alter table public.incidents
+  add column if not exists resolution_method text;
+
+create table if not exists public.webhook_events (
+  id bigint generated always as identity primary key,
+  received_at timestamptz not null default now(),
+  verified boolean not null,
+  payload jsonb not null
+);
+alter table public.webhook_events enable row level security;
+drop policy if exists "public read webhook events" on public.webhook_events;
+create policy "public read webhook events"
+  on public.webhook_events for select using (true);
+
 -- Migration for the first version of the schema.
 alter table public.incidents
   add column if not exists scope text not null default 'PUBLIC'
@@ -51,13 +65,43 @@ create index if not exists incidents_service_status_idx
 create index if not exists incidents_scope_status_idx
   on public.incidents (scope, status);
 
+create table if not exists public.audit_logs (
+  id bigint generated always as identity primary key,
+  actor text not null,
+  action text not null,
+  service_id text not null,
+  incident_id uuid not null,
+  created_at timestamptz not null default now(),
+  previous_hash text not null,
+  hash text not null unique
+);
+
+create index if not exists audit_logs_created_idx
+  on public.audit_logs (created_at desc);
+
+create table if not exists public.state_events (
+  id bigint generated always as identity primary key,
+  service_id text not null,
+  from_state text not null,
+  to_state text not null,
+  scope text,
+  payload jsonb not null,
+  created_at timestamptz not null default now()
+);
+alter table public.state_events enable row level security;
+drop policy if exists "public read state events" on public.state_events;
+create policy "public read state events"
+  on public.state_events for select using (true);
+
 alter table public.services enable row level security;
 alter table public.health_logs enable row level security;
 alter table public.incidents enable row level security;
+alter table public.audit_logs enable row level security;
 
 drop policy if exists "public read services" on public.services;
 drop policy if exists "public read health logs" on public.health_logs;
 drop policy if exists "public read incidents" on public.incidents;
+drop policy if exists "public read audit logs" on public.audit_logs;
 
 create policy "public read services"
   on public.services for select using (true);
@@ -65,6 +109,8 @@ create policy "public read health logs"
   on public.health_logs for select using (true);
 create policy "public read incidents"
   on public.incidents for select using (true);
+create policy "public read audit logs"
+  on public.audit_logs for select using (true);
 
 -- Realtime websocket streams for the dashboard.
 do $$
@@ -88,5 +134,23 @@ begin
     where pubname = 'supabase_realtime' and tablename = 'health_logs'
   ) then
     alter publication supabase_realtime add table public.health_logs;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'audit_logs'
+  ) then
+    alter publication supabase_realtime add table public.audit_logs;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'webhook_events'
+  ) then
+    alter publication supabase_realtime add table public.webhook_events;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime' and tablename = 'state_events'
+  ) then
+    alter publication supabase_realtime add table public.state_events;
   end if;
 end $$;

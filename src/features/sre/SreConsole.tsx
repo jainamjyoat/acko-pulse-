@@ -1,4 +1,6 @@
 import type { StatusPayload } from "../shared/types";
+import AuditTrail from "../audit/AuditTrail";
+import WebhookReceiver from "../webhooks/WebhookReceiver";
 import {
   GradeBadge,
   ms,
@@ -13,6 +15,7 @@ type Props = {
   adminKey: string;
   setAdminKey: (key: string) => void;
   onResolve: (id: string) => void;
+  onRollback: (id: string) => void;
   busyId: string | null;
   error: string | null;
 };
@@ -42,6 +45,7 @@ export default function SreConsole({
   adminKey,
   setAdminKey,
   onResolve,
+  onRollback,
   busyId,
   error,
 }: Props) {
@@ -67,11 +71,14 @@ export default function SreConsole({
   return (
     <div className="space-y-4">
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <Metric
-          label="Availability"
-          value={pct(availability)}
-          detail={`${totalChecks} checks in 1h sample`}
-        />
+        <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-5">
+          <p className="text-[10px] font-medium uppercase tracking-[0.16em] text-slate-600">Availability</p>
+          <p className="mt-2 font-mono text-2xl text-slate-100">{pct(availability)}</p>
+          <span className={`mt-1 inline-flex rounded-full px-2 py-0.5 text-[9px] font-bold ${status.slaMet ? "bg-emerald-400/10 text-emerald-300" : "bg-red-400/10 text-red-300"}`}>
+            {status.slaMet ? "SLA MET" : "BREACHED"}
+          </span>
+          <p className="mt-1 text-[11px] text-slate-500">{totalChecks} checks in 1h sample</p>
+        </div>
         <Metric
           label="Error budget"
           value={pct(budget, 1)}
@@ -170,7 +177,7 @@ export default function SreConsole({
                     </div>
                   </td>
                   <td className="px-5 py-3.5 text-right">
-                    <GradeBadge grade={grades.get(row.serviceId) ?? "F"} />
+                    <GradeBadge grade={grades.get(row.serviceId) ?? "B"} />
                   </td>
                 </tr>
               ))}
@@ -190,12 +197,15 @@ export default function SreConsole({
           </p>
 
           <div className="mt-4 space-y-2">
-            {openIncidents.length === 0 ? (
+            {status.incidents.length === 0 ? (
               <p className="rounded-xl border border-dashed border-white/[0.08] px-4 py-8 text-center text-xs text-slate-500">
                 Nothing open. No action required.
               </p>
             ) : (
-              openIncidents.map((incident) => (
+              [...status.incidents]
+                .sort((a, b) => Number(a.status === "open") - Number(b.status === "open"))
+                .slice(0, 10)
+                .map((incident) => (
                 <div
                   key={incident.id}
                   className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.07] bg-black/20 p-3.5"
@@ -208,17 +218,40 @@ export default function SreConsole({
                       <ScopeBadge scope={incident.scope} />
                     </div>
                     <p className="mt-1 text-[11px] text-slate-500">
-                      {incident.severity} · opened {timeAgo(incident.startedAt)}
+                      {incident.severity} / {incident.scope} / opened {timeAgo(incident.startedAt)}
                     </p>
+                    {incident.resolutionMethod && (
+                      <p className="mt-1 text-[10px] font-medium text-emerald-300">
+                        {incident.resolutionMethod === "rollback"
+                          ? "Resolved via One-Click Rollback"
+                          : `Resolved via ${incident.resolutionMethod}`}
+                      </p>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => onResolve(incident.id)}
-                    disabled={!adminKey || busyId === incident.id}
-                    className="shrink-0 rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-35"
-                  >
-                    {busyId === incident.id ? "Resolving..." : "Resolve"}
-                  </button>
+                    <div className="flex shrink-0 flex-col gap-1.5">
+                    {incident.status === "open" && (
+                      <>
+                    <button
+                      type="button"
+                      onClick={() => onRollback(incident.id)}
+                      disabled={!adminKey || busyId === incident.id}
+                      className="rounded-lg border border-emerald-400/20 bg-emerald-400/10 px-3 py-1.5 text-[11px] font-medium text-emerald-300 transition-colors hover:bg-emerald-400/15 disabled:cursor-not-allowed disabled:opacity-35"
+                    >
+                      {busyId === incident.id
+                        ? "Rolling Back & Verifying..."
+                        : "Trigger Rollback / Heal"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => onResolve(incident.id)}
+                      disabled={!adminKey || busyId === incident.id}
+                      className="text-[10px] text-slate-500 hover:text-slate-300 disabled:opacity-35"
+                    >
+                      Resolve manually
+                    </button>
+                    </>
+                    )}
+                  </div>
                 </div>
               ))
             )}
@@ -254,6 +287,10 @@ export default function SreConsole({
           ) : null}
         </div>
       </section>
+      <div className="grid gap-4 lg:grid-cols-2">
+        <WebhookReceiver />
+        <AuditTrail entries={status.audit} valid={status.auditValid} />
+      </div>
     </div>
   );
 }

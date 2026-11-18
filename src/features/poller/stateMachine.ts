@@ -9,13 +9,18 @@ export const WINDOW_SIZE = 3;
 export const LATENCY_BUDGET_MS = 1000;
 
 /** Last-3 sliding window: 3/3 fail -> OUTAGE; 1-2 fail or avg > 1s -> DEGRADED. */
-export function evaluateWindow(window: HealthCheck[]): ServiceState {
+export function evaluateWindow(
+  window: HealthCheck[],
+  previous: ServiceState = "OPERATIONAL",
+): ServiceState {
+  if (window.length < WINDOW_SIZE) return previous;
   const failures = window.filter((check) => !check.ok).length;
+  if (failures === WINDOW_SIZE) return "OUTAGE";
+  if (failures > 0) return "DEGRADED";
   const avgLatency =
     window.reduce((sum, check) => sum + check.latency, 0) / window.length;
 
-  if (window.length === WINDOW_SIZE && failures === WINDOW_SIZE) return "OUTAGE";
-  if (failures > 0 || avgLatency > LATENCY_BUDGET_MS) return "DEGRADED";
+  if (avgLatency > LATENCY_BUDGET_MS) return "DEGRADED";
   return "OPERATIONAL";
 }
 
