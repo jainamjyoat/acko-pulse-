@@ -1,0 +1,75 @@
+export const STATES = ["OPERATIONAL", "DEGRADED", "OUTAGE"] as const;
+export type ServiceState = (typeof STATES)[number];
+export type SecurityGrade = "A" | "B" | "C" | "D" | "F";
+export type Severity = "critical" | "warning";
+export type IncidentStatus = "open" | "resolved";
+
+export type ServiceConfig = {
+  id: string;
+  name: string;
+  url: string;
+  description: string;
+};
+
+export type HealthCheck = {
+  ok: boolean;
+  latency: number;
+  grade: SecurityGrade;
+  checkedAt: string;
+  error?: string;
+};
+
+export type ServiceSnapshot = {
+  id: string;
+  name: string;
+  description: string;
+  url: string;
+  state: ServiceState;
+  latency: number;
+  grade: SecurityGrade;
+  lastChecked: string | null;
+  history: { ok: boolean; latency: number }[];
+  uptime: number;
+  checks: number;
+  failures: number;
+};
+
+export type Incident = {
+  id: string;
+  serviceId: string;
+  serviceName: string;
+  severity: Severity;
+  status: IncidentStatus;
+  title: string;
+  startedAt: string;
+  resolvedAt: string | null;
+};
+
+export type SlaRow = {
+  serviceId: string;
+  serviceName: string;
+  state: ServiceState;
+  uptime: number;
+  avgLatency: number;
+  errorBudget: number;
+  checks: number;
+  failures: number;
+};
+
+export type StatusPayload = {
+  services: ServiceSnapshot[];
+  incidents: Incident[];
+  sla: SlaRow[];
+  updatedAt: string;
+  source: "memory" | "supabase";
+};
+
+export type StateChange = {
+  serviceId: string;
+  serviceName: string;
+  from: ServiceState;
+  to: ServiceState;
+  latency: number;
+  grade: SecurityGrade;
+  at: string;
+};

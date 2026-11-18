@@ -1,36 +1,29 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Pulse
 
-## Getting Started
+Live status page + SRE console for four microservices. Built with Next.js App Router, TypeScript, Tailwind, and Supabase.
 
-First, run the development server:
+## Run
 
 ```bash
+npm install
+cp .env.example .env.local   # optional: app runs in-memory without Supabase
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Apply `features/pulse/db/schema.sql` in the Supabase SQL editor to enable persistence and realtime websockets.
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+The feature is grouped under `features/pulse/`; see `features/pulse/README.md` for the full file map.
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Behavior
 
-## Learn More
+- `GET /api/poll` returns the current snapshot; if the last probe is older than 4s it runs one. `POST /api/poll` forces a probe.
+- A background poller in `instrumentation.ts` probes every 5s and uses `globalThis` for the last-3-check windows.
+- `OUTAGE`: 3/3 checks fail. `DEGRADED`: 1-2 fail, or window latency averages over 1000ms. `OPERATIONAL`: 3/3 pass.
+- Incidents open on a transition into `OUTAGE` (critical) or `DEGRADED` (warning), and auto-resolve on `OPERATIONAL`.
+- `WEBHOOK_URL` receives state changes only, signed with `X-Pulse-Signature: sha256=<hmac>` over the raw JSON body using `WEBHOOK_SECRET`.
+- `POST /api/incidents/resolve` requires `x-admin-key: $ADMIN_KEY`, resolves the incident, and resets the service window to operational.
+- Public tab reads `/api/status`; Supabase changes for `services` and `incidents` also refresh through Realtime.
 
-To learn more about Next.js, take a look at the following resources:
+## Notes
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
-
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
-
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+`globalThis` state and `setInterval` are per server process. For multi-instance or serverless deployments, move the window state to Redis/Supabase and trigger polling from a cron job.
