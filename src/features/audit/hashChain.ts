@@ -86,7 +86,8 @@ export async function getAuditTrail(): Promise<AuditEntry[]> {
       }));
     }
   }
-  return [...getStore().audit];
+  const audit = getStore().audit;
+  return Array.isArray(audit) ? [...audit] : [];
 }
 
 export function verifyAuditTrail(entries: AuditEntry[]): boolean {

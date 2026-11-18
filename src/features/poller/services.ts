@@ -4,13 +4,13 @@ export const SERVICES: ServiceConfig[] = [
   {
     id: "quotes",
     name: "Quotes",
-    url: process.env.SERVICE_QUOTES_URL ?? "https://httpbin.org/status/200",
+    url: process.env.SERVICE_QUOTES_URL ?? "http://localhost:4101/health",
     description: "Quote generation and pricing",
   },
   {
     id: "payments",
     name: "Payments",
-    url: process.env.SERVICE_PAYMENTS_URL ?? "https://api.github.com/zen",
+    url: process.env.SERVICE_PAYMENTS_URL ?? "http://localhost:4102/health",
     description: "Checkout, billing, settlement",
   },
   {
@@ -18,14 +18,14 @@ export const SERVICES: ServiceConfig[] = [
     name: "Claims",
     url:
       process.env.SERVICE_CLAIMS_URL ??
-      "https://jsonplaceholder.typicode.com/todos/1",
+      "http://localhost:4103/health",
     description: "Claims processing and adjudication",
   },
   {
     id: "notifications",
     name: "Notifications",
     url:
-      process.env.SERVICE_NOTIFICATIONS_URL ?? "https://postman-echo.com/status/200",
+      process.env.SERVICE_NOTIFICATIONS_URL ?? "http://localhost:4104/health",
     description: "Email, push, transactional messaging",
   },
 ];

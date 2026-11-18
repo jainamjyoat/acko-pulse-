@@ -1,0 +1,36 @@
+services:
+  quotes:
+    build: ./services/mock
+    environment:
+      SERVICE_NAME: Quotes
+      PORT: 8080
+    ports:
+      - "4101:8080"
+    restart: unless-stopped
+
+  payments:
+    build: ./services/mock
+    environment:
+      SERVICE_NAME: Payments
+      PORT: 8080
+    ports:
+      - "4102:8080"
+    restart: unless-stopped
+
+  claims:
+    build: ./services/mock
+    environment:
+      SERVICE_NAME: Claims
+      PORT: 8080
+    ports:
+      - "4103:8080"
+    restart: unless-stopped
+
+  notifications:
+    build: ./services/mock
+    environment:
+      SERVICE_NAME: Notifications
+      PORT: 8080
+    ports:
+      - "4104:8080"
+    restart: unless-stopped

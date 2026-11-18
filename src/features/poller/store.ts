@@ -61,11 +61,64 @@ function seed(): Store {
   };
 }
 
-const pulseGlobal = globalThis as unknown as { __pulseStore?: Store };
+const pulseGlobal = globalThis as unknown as { __pulseStore?: Partial<Store> };
 
-/** Survives HMR and module reloads inside one server process. */
+/** Reconcile state across Next.js HMR versions without discarding live checks. */
 export function getStore(): Store {
-  return (pulseGlobal.__pulseStore ??= seed());
+  const existing = pulseGlobal.__pulseStore;
+  if (!existing) {
+    const fresh = seed();
+    pulseGlobal.__pulseStore = fresh;
+    return fresh;
+  }
+
+  const defaults = seed();
+  const store = existing as Store;
+
+  if (!(store.runtimes instanceof Map)) store.runtimes = defaults.runtimes;
+  for (const [id, runtime] of store.runtimes) {
+    const config = SERVICES.find((service) => service.id === id);
+    if (!config || !runtime || typeof runtime !== "object") {
+      store.runtimes.delete(id);
+      continue;
+    }
+    runtime.config = config;
+    runtime.window = Array.isArray(runtime.window) ? runtime.window.slice(-3) : [];
+    runtime.history = Array.isArray(runtime.history)
+      ? runtime.history.slice(-HISTORY_LIMIT)
+      : [];
+    runtime.outageHistory = Array.isArray(runtime.outageHistory)
+      ? runtime.outageHistory.slice(-20)
+      : [];
+    runtime.outageCycles = Number.isFinite(runtime.outageCycles)
+      ? runtime.outageCycles
+      : 0;
+    runtime.latency = Number.isFinite(runtime.latency) ? runtime.latency : 0;
+    runtime.grade = runtime.grade === "A" ? "A" : "B";
+    runtime.lastChecked ??= null;
+  }
+  for (const config of SERVICES) {
+    if (!store.runtimes.has(config.id)) {
+      store.runtimes.set(config.id, defaults.runtimes.get(config.id)!);
+    }
+  }
+
+  store.incidents = Array.isArray(store.incidents) ? store.incidents : [];
+  store.audit = Array.isArray(store.audit) ? store.audit : [];
+  store.lastPoll = Number.isFinite(store.lastPoll) ? store.lastPoll : 0;
+  store.inFlight ??= null;
+  store.alertOpen = store.alertOpen instanceof Set ? store.alertOpen : new Set();
+  store.pendingHealing =
+    store.pendingHealing instanceof Map ? store.pendingHealing : new Map();
+  store.receivedWebhooks = Array.isArray(store.receivedWebhooks)
+    ? store.receivedWebhooks
+    : [];
+  store.lastRealtimePublish = Number.isFinite(store.lastRealtimePublish)
+    ? store.lastRealtimePublish
+    : 0;
+
+  pulseGlobal.__pulseStore = store;
+  return store;
 }
 
 export function recordCheck(runtime: Runtime, check: HealthCheck): void {

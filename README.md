@@ -7,8 +7,13 @@ Live status page + SRE console for four microservices. Built with Next.js App Ro
 ```bash
 npm install
 cp .env.example .env.local   # optional: app runs in-memory without Supabase
+npm run services:up           # start four local service containers
 npm run dev
 ```
+
+Pulse polls local Docker services by default: Quotes (`4101`), Payments (`4102`), Claims (`4103`), and Notifications (`4104`). Each exposes `GET /health`, `POST /control/fail`, and `POST /control/reset`. Run `npm run services:down` to stop them. The SRE rollback action calls the affected container's `/control/reset` and waits for three successful checks before resolving the incident.
+
+To test a failure, for example: `curl -X POST http://localhost:4102/control/fail`. The service will become an outage after three polls. Rollback from the SRE console or call `curl -X POST http://localhost:4102/control/reset`.
 
 Apply `src/features/poller/schema.sql` in the Supabase SQL editor to enable persistence and realtime websockets.
 
