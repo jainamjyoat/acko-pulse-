@@ -1,8 +1,8 @@
-import { getStatus } from "./status";
-import { getStore, resetService } from "./store";
-import { supabaseAdmin } from "./supabase";
-import { sendStateWebhook } from "./webhook";
-import type { Incident, StateChange } from "../types";
+import { getStatus } from "../status/getStatus";
+import { getStore, resetService } from "../poller/store";
+import { supabaseAdmin } from "../shared/supabase-server";
+import { sendStateWebhook } from "../poller/webhook";
+import type { Incident, StateChange } from "../shared/types";
 
 type ResolveBody = { id?: unknown };
 
@@ -38,7 +38,7 @@ export async function resolveIncident(request: Request) {
     const { data } = await supabase
       .from("incidents")
       .select(
-        "id, service_id, severity, status, title, started_at, resolved_at",
+        "id, service_id, severity, scope, status, title, started_at, resolved_at",
       )
       .eq("id", body.id)
       .maybeSingle();
@@ -50,6 +50,8 @@ export async function resolveIncident(request: Request) {
         serviceId: data.service_id,
         serviceName: runtime?.config.name ?? data.service_id,
         severity: data.severity,
+        scope:
+          data.scope ?? (data.severity === "warning" ? "INTERNAL" : "PUBLIC"),
         status: data.status,
         title: data.title,
         startedAt: data.started_at,
@@ -72,6 +74,7 @@ export async function resolveIncident(request: Request) {
       serviceName: runtime.config.name,
       from: runtime.state,
       to: "OPERATIONAL",
+      scope: null,
       latency: runtime.latency,
       grade: runtime.grade,
       at: now,

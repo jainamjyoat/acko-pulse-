@@ -1,17 +1,17 @@
 import { SERVICES } from "./services";
 import { gradeSecurity } from "./security";
-import { evaluateWindow } from "./state";
+import { evaluateWindow, routeIncident } from "./stateMachine";
 import { getStore, recordCheck, resolveOpenIncidents } from "./store";
-import { getStatus } from "./status";
-import { supabaseAdmin } from "./supabase";
+import { sendStateWebhook } from "./webhook";
+import { getStatus } from "../status/getStatus";
+import { supabaseAdmin } from "../shared/supabase-server";
 import type {
   HealthCheck,
   Incident,
   ServiceConfig,
   StateChange,
   StatusPayload,
-} from "../types";
-import { sendStateWebhook } from "./webhook";
+} from "../shared/types";
 
 const POLL_MS = 5000;
 const POLL_FRESH_MS = 4000;
@@ -129,6 +129,7 @@ async function persist(
         id: incident.id,
         service_id: incident.serviceId,
         severity: incident.severity,
+        scope: incident.scope,
         status: incident.status,
         title: incident.title,
         started_at: incident.startedAt,
@@ -155,39 +156,42 @@ async function runPoll(): Promise<void> {
     runtime.state = evaluateWindow(runtime.window);
 
     const changed = runtime.state !== previous;
-    if (changed) {
-      const change: StateChange = {
-        serviceId: runtime.config.id,
-        serviceName: runtime.config.name,
-        from: previous,
-        to: runtime.state,
-        latency: check.latency,
-        grade: check.grade,
-        at: check.checkedAt,
-      };
-      changes.push(change);
-      resolveOpenIncidents(runtime.config.id, change.at);
-
-      if (runtime.state !== "OPERATIONAL") {
-        const incident: Incident = {
-          id: crypto.randomUUID(),
-          serviceId: runtime.config.id,
-          serviceName: runtime.config.name,
-          severity: runtime.state === "OUTAGE" ? "critical" : "warning",
-          status: "open",
-          title:
-            runtime.state === "OUTAGE"
-              ? `${runtime.config.name} outage`
-              : `${runtime.config.name} performance degraded`,
-          startedAt: change.at,
-          resolvedAt: null,
-        };
-        opened.push(incident);
-        store.incidents = [incident, ...store.incidents].slice(0, 60);
+    if (!changed) {
+      if (runtime.state === "OPERATIONAL") {
+        resolveOpenIncidents(runtime.config.id, check.checkedAt);
       }
-    } else if (runtime.state === "OPERATIONAL") {
-      resolveOpenIncidents(runtime.config.id, check.checkedAt);
+      continue;
     }
+
+    const route = routeIncident(runtime.config.name, runtime.state);
+    const change: StateChange = {
+      serviceId: runtime.config.id,
+      serviceName: runtime.config.name,
+      from: previous,
+      to: runtime.state,
+      scope: route?.scope ?? null,
+      latency: check.latency,
+      grade: check.grade,
+      at: check.checkedAt,
+    };
+    changes.push(change);
+    resolveOpenIncidents(runtime.config.id, change.at);
+
+    if (!route) continue;
+
+    const incident: Incident = {
+      id: crypto.randomUUID(),
+      serviceId: runtime.config.id,
+      serviceName: runtime.config.name,
+      severity: route.severity,
+      scope: route.scope,
+      status: "open",
+      title: route.title,
+      startedAt: change.at,
+      resolvedAt: null,
+    };
+    opened.push(incident);
+    store.incidents = [incident, ...store.incidents].slice(0, 60);
   }
 
   await persist(checks, changes, opened, firstPoll);

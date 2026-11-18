@@ -5,7 +5,7 @@ import type {
   SecurityGrade,
   ServiceConfig,
   ServiceState,
-} from "../types";
+} from "../shared/types";
 
 export type Runtime = {
   config: ServiceConfig;

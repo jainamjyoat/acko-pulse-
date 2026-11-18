@@ -1,4 +1,4 @@
-import type { ServiceConfig } from "../types";
+import type { ServiceConfig } from "../shared/types";
 
 export const SERVICES: ServiceConfig[] = [
   {

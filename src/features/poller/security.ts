@@ -1,4 +1,4 @@
-import type { SecurityGrade } from "../types";
+import type { SecurityGrade } from "../shared/types";
 
 /** Scores the response against five baseline browser-hardening headers. */
 export function gradeSecurity(headers: Headers): SecurityGrade {

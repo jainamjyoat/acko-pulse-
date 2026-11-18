@@ -3,6 +3,7 @@ export type ServiceState = (typeof STATES)[number];
 export type SecurityGrade = "A" | "B" | "C" | "D" | "F";
 export type Severity = "critical" | "warning";
 export type IncidentStatus = "open" | "resolved";
+export type IncidentScope = "PUBLIC" | "INTERNAL";
 
 export type ServiceConfig = {
   id: string;
@@ -26,6 +27,7 @@ export type ServiceSnapshot = {
   url: string;
   state: ServiceState;
   latency: number;
+  p95: number;
   grade: SecurityGrade;
   lastChecked: string | null;
   history: { ok: boolean; latency: number }[];
@@ -39,6 +41,7 @@ export type Incident = {
   serviceId: string;
   serviceName: string;
   severity: Severity;
+  scope: IncidentScope;
   status: IncidentStatus;
   title: string;
   startedAt: string;
@@ -51,6 +54,7 @@ export type SlaRow = {
   state: ServiceState;
   uptime: number;
   avgLatency: number;
+  p95: number;
   errorBudget: number;
   checks: number;
   failures: number;
@@ -69,6 +73,7 @@ export type StateChange = {
   serviceName: string;
   from: ServiceState;
   to: ServiceState;
+  scope: IncidentScope | null;
   latency: number;
   grade: SecurityGrade;
   at: string;

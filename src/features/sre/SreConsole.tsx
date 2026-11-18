@@ -1,5 +1,12 @@
-import type { StatusPayload } from "../types";
-import { GradeBadge, ms, pct, StateBadge, timeAgo } from "./ui";
+import type { StatusPayload } from "../shared/types";
+import {
+  GradeBadge,
+  ms,
+  pct,
+  ScopeBadge,
+  StateBadge,
+  timeAgo,
+} from "../shared/ui";
 
 type Props = {
   status: StatusPayload;
@@ -50,9 +57,8 @@ export default function SreConsole({
     ? status.sla.reduce((sum, row) => sum + row.errorBudget, 0) /
       status.sla.length
     : 100;
-  const avgLatency = status.sla.length
-    ? status.sla.reduce((sum, row) => sum + row.avgLatency, 0) /
-      status.sla.length
+  const worstP95 = status.sla.length
+    ? Math.max(...status.sla.map((row) => row.p95))
     : 0;
   const grades = new Map(
     status.services.map((service) => [service.id, service.grade]),
@@ -64,7 +70,7 @@ export default function SreConsole({
         <Metric
           label="Availability"
           value={pct(availability)}
-          detail={`${totalChecks} checks in rolling sample`}
+          detail={`${totalChecks} checks in 1h sample`}
         />
         <Metric
           label="Error budget"
@@ -74,12 +80,12 @@ export default function SreConsole({
         <Metric
           label="Open incidents"
           value={String(openIncidents.length)}
-          detail="Critical + warning"
+          detail="Public + internal"
         />
         <Metric
-          label="Mean latency"
-          value={ms(avgLatency)}
-          detail="Across all four services"
+          label="Worst P95"
+          value={ms(worstP95)}
+          detail="Rolling 1-hour latency"
         />
       </div>
 
@@ -90,7 +96,7 @@ export default function SreConsole({
               SLA / error budget
             </h2>
             <p className="mt-1 text-[11px] text-slate-500">
-              Rolling 5s checks · target 99.9%
+              Rolling 1-hour metrics · target 99.9%
             </p>
           </div>
           <span className="rounded-full border border-white/[0.08] px-2.5 py-1 font-mono text-[10px] text-slate-500">
@@ -99,13 +105,13 @@ export default function SreConsole({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[760px] text-left text-xs">
+          <table className="w-full min-w-[820px] text-left text-xs">
             <thead className="text-[10px] uppercase tracking-[0.14em] text-slate-600">
               <tr className="border-b border-white/[0.06]">
                 <th className="px-5 py-3 font-medium">Service</th>
                 <th className="px-4 py-3 font-medium">State</th>
                 <th className="px-4 py-3 font-medium">Uptime</th>
-                <th className="px-4 py-3 font-medium">Avg latency</th>
+                <th className="px-4 py-3 font-medium">P95 latency</th>
                 <th className="px-4 py-3 font-medium">Error budget</th>
                 <th className="px-5 py-3 text-right font-medium">Security</th>
               </tr>
@@ -130,8 +136,19 @@ export default function SreConsole({
                   <td className="px-4 py-3.5 font-mono text-slate-300">
                     {pct(row.uptime)}
                   </td>
-                  <td className="px-4 py-3.5 font-mono text-slate-400">
-                    {ms(row.avgLatency)}
+                  <td className="px-4 py-3.5">
+                    <span
+                      className={`font-mono ${
+                        row.p95 > 1000
+                          ? "font-semibold text-amber-300"
+                          : "text-slate-400"
+                      }`}
+                    >
+                      {ms(row.p95)}
+                    </span>
+                    <span className="mt-0.5 block text-[10px] text-slate-600">
+                      avg {ms(row.avgLatency)}
+                    </span>
                   </td>
                   <td className="px-4 py-3.5">
                     <div className="flex items-center gap-2">
@@ -184,9 +201,12 @@ export default function SreConsole({
                   className="flex items-center justify-between gap-4 rounded-xl border border-white/[0.07] bg-black/20 p-3.5"
                 >
                   <div>
-                    <p className="text-xs font-medium text-slate-200">
-                      {incident.title}
-                    </p>
+                    <div className="flex items-center gap-2">
+                      <p className="text-xs font-medium text-slate-200">
+                        {incident.title}
+                      </p>
+                      <ScopeBadge scope={incident.scope} />
+                    </div>
                     <p className="mt-1 text-[11px] text-slate-500">
                       {incident.severity} · opened {timeAgo(incident.startedAt)}
                     </p>

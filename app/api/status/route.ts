@@ -1,4 +1,4 @@
-import { getStatus } from "@/features/pulse/server/status";
+import { getStatus } from "@/src/features/status/getStatus";
 
 export async function GET() {
   return Response.json(await getStatus(), {

@@ -1,11 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { supabaseBrowser } from "../client/supabase";
-import type { ServiceState, StatusPayload } from "../types";
-import PublicStatus from "./PublicStatus";
-import SreConsole from "./SreConsole";
-import { stateDot, stateStyles } from "./ui";
+import { supabaseBrowser } from "../shared/supabase-browser";
+import type { ServiceState, StatusPayload } from "../shared/types";
+import PublicStatus from "../status/PublicStatus";
+import SreConsole from "../sre/SreConsole";
+import { stateDot, stateStyles } from "../shared/ui";
 
 const EMPTY: StatusPayload = {
   services: [],
@@ -15,7 +15,7 @@ const EMPTY: StatusPayload = {
   source: "memory",
 };
 
-function overallState(status: StatusPayload): ServiceState | "STARTING" {
+function engineeringState(status: StatusPayload): ServiceState | "STARTING" {
   if (!status.services.length) return "STARTING";
   if (status.services.some((service) => service.state === "OUTAGE")) {
     return "OUTAGE";
@@ -24,6 +24,14 @@ function overallState(status: StatusPayload): ServiceState | "STARTING" {
     return "DEGRADED";
   }
   return "OPERATIONAL";
+}
+
+/** Customer view ignores internal degradation. */
+function customerState(status: StatusPayload): ServiceState | "STARTING" {
+  if (!status.services.length) return "STARTING";
+  return status.services.some((service) => service.state === "OUTAGE")
+    ? "OUTAGE"
+    : "OPERATIONAL";
 }
 
 function Brand() {
@@ -150,7 +158,8 @@ export default function PulseDashboard() {
     }
   };
 
-  const overall = overallState(status);
+  const overall =
+    tab === "public" ? customerState(status) : engineeringState(status);
   const updatedAt = status.updatedAt
     ? new Date(status.updatedAt).toLocaleTimeString([], {
         hour: "2-digit",

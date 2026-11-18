@@ -29,14 +29,27 @@ create table if not exists public.incidents (
   id uuid primary key default gen_random_uuid(),
   service_id text not null references public.services (id) on delete cascade,
   severity text not null check (severity in ('critical', 'warning')),
+  scope text not null default 'PUBLIC'
+    check (scope in ('PUBLIC', 'INTERNAL')),
   status text not null default 'open' check (status in ('open', 'resolved')),
   title text not null,
   started_at timestamptz not null default now(),
   resolved_at timestamptz
 );
 
+-- Migration for the first version of the schema.
+alter table public.incidents
+  add column if not exists scope text not null default 'PUBLIC'
+  check (scope in ('PUBLIC', 'INTERNAL'));
+
+update public.incidents
+set scope = 'INTERNAL'
+where severity = 'warning' and scope = 'PUBLIC';
+
 create index if not exists incidents_service_status_idx
   on public.incidents (service_id, status);
+create index if not exists incidents_scope_status_idx
+  on public.incidents (scope, status);
 
 alter table public.services enable row level security;
 alter table public.health_logs enable row level security;

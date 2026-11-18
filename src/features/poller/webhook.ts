@@ -1,5 +1,5 @@
 import { createHmac } from "node:crypto";
-import type { StateChange } from "../types";
+import type { StateChange } from "../shared/types";
 
 /** POSTs only state transitions, signed with HMAC-SHA256. */
 export async function sendStateWebhook(change: StateChange): Promise<void> {

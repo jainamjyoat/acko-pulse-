@@ -1,26 +1,34 @@
-import { getStore } from "./store";
-import { supabaseAdmin } from "./supabase";
-import type { Incident, SlaRow, StatusPayload } from "../types";
+import { getRollingMetrics, type RollingMetrics } from "../metrics/p95";
+import { getStore } from "../poller/store";
+import { supabaseAdmin } from "../shared/supabase-server";
+import type {
+  Incident,
+  IncidentScope,
+  SlaRow,
+  StatusPayload,
+} from "../shared/types";
 
-const SLO_TARGET = 99.9;
-const BAR_CHECKS = 30;
+const BAR_CHECKS = 20;
 
 type IncidentRow = {
   id: string;
   service_id: string;
   severity: "critical" | "warning";
+  scope: IncidentScope | null;
   status: "open" | "resolved";
   title: string;
   started_at: string;
   resolved_at: string | null;
 };
 
-export function buildMemoryStatus(): StatusPayload {
+export function buildStatus(rolling: RollingMetrics): StatusPayload {
   const store = getStore();
 
   const services = [...store.runtimes.values()].map((runtime) => {
-    const checks = runtime.history.length;
-    const failures = runtime.history.filter((check) => !check.ok).length;
+    const metric = rolling.metrics.get(runtime.config.id);
+    const checks = metric?.checks ?? runtime.history.length;
+    const failures =
+      metric?.failures ?? runtime.history.filter((check) => !check.ok).length;
 
     return {
       id: runtime.config.id,
@@ -29,34 +37,29 @@ export function buildMemoryStatus(): StatusPayload {
       url: runtime.config.url,
       state: runtime.state,
       latency: runtime.latency,
+      p95: metric?.p95 ?? 0,
       grade: runtime.grade,
       lastChecked: runtime.lastChecked,
       history: runtime.history.slice(-BAR_CHECKS).map((check) => ({
         ok: check.ok,
         latency: check.latency,
       })),
-      uptime: checks ? ((checks - failures) / checks) * 100 : 100,
+      uptime: metric?.uptime ?? (checks ? ((checks - failures) / checks) * 100 : 100),
       checks,
       failures,
     };
   });
 
   const sla: SlaRow[] = services.map((service) => {
-    const failureRate = service.checks
-      ? (service.failures / service.checks) * 100
-      : 0;
-    const budgetUsed = (failureRate / (100 - SLO_TARGET)) * 100;
-
+    const metric = rolling.metrics.get(service.id);
     return {
       serviceId: service.id,
       serviceName: service.name,
       state: service.state,
       uptime: service.uptime,
-      avgLatency: service.history.length
-        ? service.history.reduce((sum, row) => sum + row.latency, 0) /
-          service.history.length
-        : 0,
-      errorBudget: Math.max(0, 100 - budgetUsed),
+      avgLatency: metric?.avgLatency ?? 0,
+      p95: service.p95,
+      errorBudget: metric?.errorBudget ?? 100,
       checks: service.checks,
       failures: service.failures,
     };
@@ -64,26 +67,34 @@ export function buildMemoryStatus(): StatusPayload {
 
   return {
     services,
-    incidents: [...store.incidents].sort(
-      (a, b) =>
-        Number(b.status === "open") - Number(a.status === "open") ||
-        b.startedAt.localeCompare(a.startedAt),
-    ),
+    incidents: [...store.incidents]
+      .map((incident) => ({
+        ...incident,
+        scope:
+          incident.scope ??
+          (incident.severity === "warning" ? "INTERNAL" : "PUBLIC"),
+      }))
+      .sort(
+        (a, b) =>
+          Number(b.status === "open") - Number(a.status === "open") ||
+          b.startedAt.localeCompare(a.startedAt),
+      ),
     sla,
     updatedAt: new Date(store.lastPoll || Date.now()).toISOString(),
-    source: "memory",
+    source: rolling.source,
   };
 }
 
 export async function getStatus(): Promise<StatusPayload> {
-  const payload = buildMemoryStatus();
+  const rolling = await getRollingMetrics();
+  const payload = buildStatus(rolling);
   const supabase = supabaseAdmin();
   if (!supabase) return payload;
 
   const { data, error } = await supabase
     .from("incidents")
     .select(
-      "id, service_id, severity, status, title, started_at, resolved_at",
+      "id, service_id, severity, scope, status, title, started_at, resolved_at",
     )
     .order("started_at", { ascending: false })
     .limit(30);
@@ -103,6 +114,7 @@ export async function getStatus(): Promise<StatusPayload> {
       serviceId: row.service_id,
       serviceName: names.get(row.service_id) ?? row.service_id,
       severity: row.severity,
+      scope: row.scope ?? (row.severity === "warning" ? "INTERNAL" : "PUBLIC"),
       status: row.status,
       title: row.title,
       startedAt: row.started_at,

@@ -1,4 +1,8 @@
-import type { SecurityGrade, ServiceState } from "../types";
+import type {
+  IncidentScope,
+  SecurityGrade,
+  ServiceState,
+} from "./types";
 
 export const stateStyles: Record<ServiceState, string> = {
   OPERATIONAL:
@@ -24,6 +28,20 @@ export function StateBadge({ state }: { state: ServiceState }) {
         }`}
       />
       {state}
+    </span>
+  );
+}
+
+export function ScopeBadge({ scope }: { scope: IncidentScope }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[9px] font-semibold uppercase tracking-wider ${
+        scope === "PUBLIC"
+          ? "border-red-400/20 bg-red-400/5 text-red-300"
+          : "border-amber-400/20 bg-amber-400/5 text-amber-300"
+      }`}
+    >
+      {scope}
     </span>
   );
 }
