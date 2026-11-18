@@ -1,11 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { StatusPayload } from "../shared/types";
 import { StateBadge } from "../shared/ui";
 
 type Scenario = "failure" | "latency" | "security" | "rollback" | "restore";
 type StepResult = { label: string; detail: string; ok: boolean; at: string };
+type ConfigCheck = "checking" | "configured" | "missing" | "error";
 
 const SCENARIOS: {
   id: Scenario;
@@ -58,6 +59,34 @@ export default function TestLab({
   const [running, setRunning] = useState<Scenario | null>(null);
   const [results, setResults] = useState<StepResult[]>([]);
   const [error, setError] = useState("");
+  const [configCheck, setConfigCheck] = useState<ConfigCheck>("checking");
+
+  const checkServerConfig = async () => {
+    setConfigCheck("checking");
+    try {
+      const response = await fetch("/api/test-lab", { cache: "no-store" });
+      if (!response.ok) throw new Error("Unable to check server configuration");
+      const config = await response.json() as { adminKeyConfigured: boolean };
+      setConfigCheck(config.adminKeyConfigured ? "configured" : "missing");
+    } catch {
+      setConfigCheck("error");
+    }
+  };
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      try {
+        const response = await fetch("/api/test-lab", { cache: "no-store" });
+        if (!response.ok) throw new Error("Unable to check server configuration");
+        const config = await response.json() as { adminKeyConfigured: boolean };
+        if (active) setConfigCheck(config.adminKeyConfigured ? "configured" : "missing");
+      } catch {
+        if (active) setConfigCheck("error");
+      }
+    })();
+    return () => { active = false; };
+  }, []);
 
   const addResult = (label: string, detail: string, ok: boolean) => {
     setResults((rows) => [
@@ -108,26 +137,7 @@ export default function TestLab({
       addResult(SCENARIOS.find((item) => item.id === scenario)!.title,
         data.message ?? "Control action accepted; waiting for poll results.", true);
 
-      if (scenario === "rollback") {
-        const deadline = Date.now() + 180_000;
-        let healthyStreak = 0;
-        while (Date.now() < deadline) {
-          await new Promise((resolve) => setTimeout(resolve, 5000));
-          const poll = await fetch("/api/poll", { cache: "no-store" });
-          if (!poll.ok) continue;
-          const snapshot = await poll.json() as StatusPayload;
-          const service = snapshot.services.find((row) => row.id === serviceId);
-          if (service?.history.slice(-3).every((check) => check.ok)) healthyStreak++;
-          else healthyStreak = 0;
-          await onRefresh();
-          if (healthyStreak >= 1 && service?.state === "OPERATIONAL") {
-            addResult("Recovery verified", "Three consecutive healthy checks; inspect incident timeline.", true);
-            break;
-          }
-        }
-      } else {
-        await onRefresh();
-      }
+      await observeOutcome(scenario);
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : "Unknown test error";
       setError(message);
@@ -135,6 +145,47 @@ export default function TestLab({
     } finally {
       setRunning(null);
     }
+  };
+
+  const observeOutcome = async (scenario: Scenario) => {
+    const maxAttempts = scenario === "rollback" ? 36 : 7;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const poll = await fetch("/api/poll", { cache: "no-store" });
+      if (poll.ok) {
+        const snapshot = await poll.json() as StatusPayload;
+        const service = snapshot.services.find((row) => row.id === serviceId);
+        const recent = service?.history.slice(-3) ?? [];
+        const incident = snapshot.incidents.find(
+          (row) => row.serviceId === serviceId && row.status === "open",
+        );
+        await onRefresh();
+
+        const complete = scenario === "failure"
+          ? service?.state === "OUTAGE" && incident?.scope === "PUBLIC"
+          : scenario === "latency"
+            ? service?.state === "DEGRADED" && incident?.scope === "INTERNAL"
+            : scenario === "security"
+              ? service?.grade === "B"
+              : scenario === "restore"
+                ? service?.state === "OPERATIONAL" && service.grade === "A" && service.latency < 1000
+                : incident?.status === "resolved" && recent.length === 3 && recent.every((check) => check.ok) && service?.state === "OPERATIONAL";
+
+        if (complete) {
+          addResult("Expected outcome observed", describeOutcome(scenario, service?.state, service?.grade), true);
+          return;
+        }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5000));
+    }
+    addResult("Outcome not observed yet", "Check the live SRE state and scenario prerequisites. Failure/latency scenarios may need 3 poll cycles; rollback requires three successful probes.", false);
+  };
+
+  const describeOutcome = (scenario: Scenario, state?: string, grade?: string) => {
+    if (scenario === "failure") return `Observed ${state}; PUBLIC outage incident opened.`;
+    if (scenario === "latency") return `Observed ${state}; INTERNAL degradation incident opened.`;
+    if (scenario === "security") return `Observed security grade ${grade}.`;
+    if (scenario === "restore") return `Service restored to ${state}; grade ${grade}.`;
+    return "Three healthy checks confirmed and incident resolved.";
   };
 
   const selected = status.services.find((service) => service.id === serviceId);
@@ -180,7 +231,17 @@ export default function TestLab({
               <span>Window</span><span className="font-mono">{selected?.history.slice(-3).filter((check) => check.ok).length ?? 0}/3 healthy</span>
             </div>
           </div>
-          {!adminKey && <p className="mt-4 text-[11px] text-amber-300">Admin key required. Set it in the SRE Console tab.</p>}
+          <div className="mt-4 rounded-lg border border-white/[0.06] p-3 text-[11px]">
+            <div className="flex items-center justify-between gap-2">
+              <p className={configCheck === "configured" ? "text-emerald-300" : "text-amber-300"}>
+                Server ADMIN_KEY: {configCheck === "checking" ? "checking…" : configCheck === "configured" ? "detected" : configCheck === "missing" ? "missing in Next.js process" : "configuration check failed"}
+              </p>
+              <button type="button" onClick={() => void checkServerConfig()} className="text-slate-400 underline hover:text-slate-200">Recheck</button>
+            </div>
+            {!adminKey && <p className="mt-1 text-slate-400">Enter the same key in the SRE Console. The browser does not receive the server secret.</p>}
+            {configCheck === "missing" && <p className="mt-1 text-slate-500">Create project-root `.env.local` beside `package.json` with `ADMIN_KEY=your-secret`. `.env.example` is a template and is not loaded. Restart Next.js after editing.</p>}
+            {configCheck === "configured" && adminKey && <p className="mt-1 text-slate-500">Server has a key; the value is never returned to the browser.</p>}
+          </div>
         </div>
 
         <div className="grid gap-3 sm:grid-cols-2">

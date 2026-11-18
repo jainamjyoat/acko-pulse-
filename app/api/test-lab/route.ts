@@ -2,10 +2,18 @@ import { serviceById } from "@/src/features/poller/services";
 
 type TestAction = "fail" | "reset" | "latency" | "security" | "restore";
 
+export async function GET() {
+  return Response.json({
+    adminKeyConfigured: Boolean(process.env.ADMIN_KEY?.trim()),
+    mode: process.env.NODE_ENV,
+    targetPorts: { quotes: 4101, payments: 4102, claims: 4103, notifications: 4104 },
+  }, { headers: { "cache-control": "no-store" } });
+}
+
 export async function POST(request: Request) {
   const adminKey = process.env.ADMIN_KEY;
-  if (!adminKey) {
-    return Response.json({ error: "Configure ADMIN_KEY to enable the test lab" }, { status: 503 });
+  if (!adminKey?.trim()) {
+    return Response.json({ error: "The Next.js server process has no non-empty ADMIN_KEY. Add ADMIN_KEY=... to the project-root .env.local and restart npm run dev." }, { status: 503 });
   }
   if (request.headers.get("x-admin-key") !== adminKey) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
